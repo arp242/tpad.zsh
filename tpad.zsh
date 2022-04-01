@@ -381,7 +381,7 @@ save-knob() {
 	print "# Knobs"
 	for k in ${(ko)knob_list}; do
 		local f=$knob_list[$k]
-		print -f "%-4s >| %-50s # %s\n" $(< $f) $f $k
+		print -f "echo %-4s >| %-50s # %s\n" $(< $f) $f $k
 	done
 }
 
