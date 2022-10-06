@@ -50,6 +50,11 @@ get-thermal() {
 	done
 }
 get-fan() {
+	if [[ ! -e /proc/acpi/ibm/fan ]]; then
+		print 'n/a'
+		return
+	fi
+
 	awk -F: '/^(speed|level):/ { gsub(/[ \t]/, "", $2); printf "%s=%s ", $1, $2 }' /proc/acpi/ibm/fan
 }
 status() {
@@ -105,8 +110,14 @@ get-charge-limit() {
 			print -n "${b:t}: "
 		fi
 
-		print -nf 'start=%d stop=%d current=%d capacity=%d status=%s' \
-			$(< $b/charge_start_threshold) $(< $b/charge_stop_threshold) $(< $b/capacity) \
+		local charge_start='n/a'
+		local charge_stop='n/a'
+		if [[ -e $b/charge_start_threshold ]]; then
+			charge_start=$(< $b/charge_start_threshold)
+			charge_stop=$(< $b/charge_stop_threshold)
+		fi
+		print -nf 'start=%s stop=%s current=%d capacity=%d status=%s' \
+			$charge_start $charge_stop $(< $b/capacity) \
 			$(( $(< $b/energy_full).0 / $(< $b/energy_full_design).0 * 100 )) \
 			"$(< $b/status)"
 
@@ -131,7 +142,7 @@ save-charge-limit() {
 	for b in /sys/class/power_supply/BAT*; do
 		print "# Charge limits for $b:t"
 		print "echo $(< $b/charge_start_threshold) >| $b/charge_start_threshold"
-		print "echo $(< $b/charge_stop_threshold) >| $b/charge_stop_threshold"
+		print "echo $(< $b/charge_stop_threshold)  >| $b/charge_stop_threshold"
 		print
 	done
 }
@@ -139,18 +150,18 @@ save-charge-limit() {
 # cpu
 #####
 help-cpu() {
-    typeset -A can
-    for s in $(< /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors); \
-        can[$s]=1
+	typeset -A can
+	for s in $(< /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors); \
+		can[$s]=1
 
-    print 'Set CPU governor and frequency.\n'
+	print 'Set CPU governor and frequency.\n'
 	print 'The first argument is the governor; supported on this system:\n'
-    (( ${can[performance]:-0}  > 0 )) && print '   performance    Run at max frequency.'
+	(( ${can[performance]:-0}  > 0 )) && print '   performance    Run at max frequency.'
 	(( ${can[powersave]:-0}    > 0 )) && print '   powersave      Run at the minimum frequency.'
 	(( ${can[ondemand]:-0}     > 0 )) && print '   ondemand       Dynamically switch if at 95% load.'
 	(( ${can[conservative]:-0} > 0 )) && print '   conservative   Dynamically switch if at 75% load.'
 	(( ${can[userspace]:-0}    > 0 )) && print '   userspace      Set fixed frequency.'
-   <<-EOF
+	<<-EOF
 
 	For "userspace" it accepts a second argument to set the frequency, for
 	everything else it accepts two arguments to set the min and max
@@ -168,11 +179,11 @@ EOF
 get-cpu() {
 	local all=()
 	for c in /sys/devices/system/cpu/cpu*/cpufreq; do
-        local x="governor=$(< "$c/scaling_governor")"
-        x+=" min_freq=$(( $(< $c/scaling_min_freq) / 1000 ))"
-        x+=" max_freq=$(( $(< $c/scaling_max_freq) / 1000 ))"
+		local x="governor=$(< "$c/scaling_governor")"
+		x+=" min_freq=$(( $(< $c/scaling_min_freq) / 1000 ))"
+		x+=" max_freq=$(( $(< $c/scaling_max_freq) / 1000 ))"
 		all+=($x)
-    done
+	done
 
 	if [[ ${#${(u)all}} -eq 1 ]]; then
 		print ${(u)all}
@@ -261,7 +272,7 @@ EOF
 monitor-fan() {
 	(( $#argv < 1 )) && help 'need at least one rule' monitor-fan
 
-	local last_level=$( awk '/^level:/ { print $2 }' /proc/acpi/ibm/fan)
+	local last_level=$(awk '/^level:/ { print $2 }' /proc/acpi/ibm/fan)
 	trap 'print level auto >/proc/acpi/ibm/fan' EXIT INT
 
 	local set_level=('if false; then { : }')
@@ -292,6 +303,13 @@ monitor-fan() {
 }
 
 # knob
+#
+# xinput disable 11
+# xinput enable 11
+#
+# /sys/devices/platform/i8042/serio1/serio2/press_to_select
+# /sys/devices/platform/i8042/serio1/serio2/sensitivity   | default:200, okay:100
+# /sys/devices/platform/i8042/serio1/serio2/speed         | default:97, okay:50
 typeset -A knob_list=(
 	led-power     /sys/class/leds/tpacpi::power/brightness
 	led-lid       /sys/class/leds/tpacpi::lid_logo_dot/brightness
@@ -331,7 +349,11 @@ get-knob() {
 	for k in ${(ko)knob_list}; do
 		local f=$knob_list[$k]
 		(( $i > 0 && $i % 2 == 0 )) && print -n '\n          '
-		print -f "%-${w}s = %-5s " $k $(< $f)
+		if [[ ! -e $f ]]; then
+			print -f "%-${w}s = %-5s " $k 'n/a'
+		else
+			print -f "%-${w}s = %-5s " $k $(< $f)
+		fi
 		i=$(( $i + 1 ))
 	done
 }
@@ -405,7 +427,7 @@ EOF
 }
 help() {
 	[[ -n "${argv[1]:-}" ]] && print >&2 "$progname: error: ${argv[1]}\n"
-    cmd=${argv[2]:-}
+	local cmd=${argv[2]:-}
 
 	case $cmd in
 		('')           help-top          ;;
@@ -429,7 +451,7 @@ help() {
 		(*) help "unknown help topic: $cmd"
 	esac
 
-	if [[ -n "${argv[1]:-}" ]] && exit 1 || exit 0
+	[[ -n "${argv[1]:-}" ]] && exit 1 || exit 0
 }
 
 # main
@@ -454,19 +476,19 @@ main $argv[@]
 
 
 # The MIT License (MIT)
-# 
+#
 # Copyright © Martin Tournoij
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
 # deal in the Software without restriction, including without limitation the
 # rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
 # sell copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in
 # all copies or substantial portions of the Software.
-# 
+#
 # The software is provided "as is", without warranty of any kind, express or
 # implied, including but not limited to the warranties of merchantability,
 # fitness for a particular purpose and noninfringement. In no event shall the
