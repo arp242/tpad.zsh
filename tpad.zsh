@@ -60,6 +60,7 @@ get-fan() {
 status() {
 	print -f '\x1b[1mCharge:\x1b[0m   %s\n' "$(get-charge-limit)"
 	print -f '\x1b[1mCPU:\x1b[0m      %s\n' "$(get-cpu)"
+	print -f '\x1b[1mGPU:\x1b[0m      %s\n' "$(get-gpu)"
 	print -f '\x1b[1mFan:\x1b[0m      %s\n' "$(get-fan)"
 	print -f '\x1b[1mThermal:\x1b[0m  %s\n' "$(get-thermal)"
 	print -f '\x1b[1mKnobs:\x1b[0m    %s\n' "$(get-knob)"
@@ -238,6 +239,17 @@ save-cpu() {
 		print
 	done
 }
+
+# cpu
+#####
+get-gpu() {
+	# AMD seems to require magic-fu, but I can't test.
+	# https://github.com/CounterPillow/mpv-gpufreq
+	local c=/sys/class/drm/card0
+	print "cur_freq=$(<$c/gt_cur_freq_mhz) min_freq=$(<$c/gt_min_freq_mhz) max_freq=$(<$c/gt_max_freq_mhz)"
+}
+# print 1000 >|gt_max_freq_mhz
+# print 300  >|gt_min_freq_mhz
 
 # monitor-fan
 #############
